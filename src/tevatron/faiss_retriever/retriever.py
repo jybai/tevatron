@@ -2,7 +2,7 @@ import numpy as np
 import faiss
 
 import logging
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 logger = logging.getLogger(__name__)
 

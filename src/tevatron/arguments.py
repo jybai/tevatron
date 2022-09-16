@@ -28,12 +28,20 @@ class ModelArguments:
         default=False,
         metadata={"help": "no weight sharing between qry passage encoders"}
     )
+    untie_pooler: bool = field(
+        default=False,
+        metadata={"help": "no weight sharing between qry passage poolers"}
+    )
+    pooler_symmetric: bool = field(
+        default=False,
+        metadata={"help": "whether use symmetric matrix for inner product"}
+    )
 
     # out projection
     add_pooler: bool = field(default=False)
     projection_in_dim: int = field(default=768)
     projection_out_dim: int = field(default=768)
-
+    
     # for Jax training
     dtype: Optional[str] = field(
         default="float32",
@@ -121,3 +129,5 @@ class TevatronTrainingArguments(TrainingArguments):
     grad_cache: bool = field(default=False, metadata={"help": "Use gradient cache update"})
     gc_q_chunk_size: int = field(default=4)
     gc_p_chunk_size: int = field(default=32)
+
+    identity_bias_magnitude: float = field(default=1.0)

@@ -59,7 +59,7 @@ class EncoderModel(nn.Module):
                  lm_p: PreTrainedModel,
                  pooler: nn.Module = None,
                  untie_encoder: bool = False,
-                 negatives_x_device: bool = False
+                 negatives_x_device: bool = False,
                  ):
         super().__init__()
         self.lm_q = lm_q
@@ -179,6 +179,9 @@ class EncoderModel(nn.Module):
 
         if model_args.add_pooler:
             pooler = cls.build_pooler(model_args)
+            if train_args.identity_bias_magnitude is not None:
+                pooler.init_weight_identity(train_args.identity_bias_magnitude)
+                logger.info("Intialized pooler weight to bias towards identity")
         else:
             pooler = None
 

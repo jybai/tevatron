@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -6,26 +7,69 @@ from .encoder import EncoderPooler, EncoderModel
 
 logger = logging.getLogger(__name__)
 
+class SymmetricLinear(nn.Module):
+    def __init__(self, in_out_dim, proj=True):
+        super().__init__()
+        self.proj = proj
+        stdv = 1. / math.sqrt(in_out_dim)
+        if self.proj:
+            self.Q = nn.parameter.Parameter(torch.empty((in_out_dim, in_out_dim)))
+            nn.init.uniform_(self.Q, -stdv, stdv)
+        self.diag = nn.parameter.Parameter(torch.empty(in_out_dim))
+        nn.init.uniform_(self.diag, -stdv, stdv)
+        
+    def forward(self, x):
+        if self.proj:
+            x = torch.matmul(x, self.Q)
+        x = torch.matmul(x, torch.diag(self.diag))
+        if self.proj:
+            x = torch.matmul(x, self.Q.T)
+        return x
 
 class DensePooler(EncoderPooler):
-    def __init__(self, input_dim: int = 768, output_dim: int = 768, tied=True):
+    def __init__(self, input_dim: int = 768, output_dim: int = 768, tied=True, symmetric=False):
         super(DensePooler, self).__init__()
-        self.linear_q = nn.Linear(input_dim, output_dim)
-        if tied:
-            self.linear_p = self.linear_q
+        
+        if symmetric:
+            assert(input_dim == output_dim)
+            self.linear_q = SymmetricLinear(input_dim)
+            self.linear_p = nn.Identity()
         else:
-            self.linear_p = nn.Linear(input_dim, output_dim)
-        self._config = {'input_dim': input_dim, 'output_dim': output_dim, 'tied': tied}
+            self.linear_q = nn.Linear(input_dim, output_dim, bias=False)
+            if tied:
+                self.linear_p = self.linear_q
+            else:
+                self.linear_p = nn.Linear(input_dim, output_dim, bias=False)
+        self._config = {'input_dim': input_dim, 'output_dim': output_dim, 'tied': tied, 
+                        'symmetric': symmetric}
 
     def forward(self, q: Tensor = None, p: Tensor = None, **kwargs):
         if q is not None:
-            return self.linear_q(q[:, 0])
+            pool_q = self.linear_q(q[:, 0])
+            return pool_q
         elif p is not None:
-            return self.linear_p(p[:, 0])
+            pool_p = self.linear_p(p[:, 0])
+            return pool_p
         else:
             raise ValueError
+            
+    def init_weight_identity(self, identity_bias_magnitude):
+        with torch.no_grad():
+            if self._config['symmetric']:
+                self.linear_q.diag += torch.ones_like(self.linear_q.diag) * identity_bias_magnitude
+                im = torch.zeros_like(self.linear_q.Q)
+                im.fill_diagonal_(1)
+                self.linear_q.Q += im * identity_bias_magnitude
+            else:
+                im = torch.zeros_like(self.linear_q.weight)
+                im.fill_diagonal_(1)
+                self.linear_q.weight += im * identity_bias_magnitude
 
-
+                if not self._config['tied']:
+                    im = torch.zeros_like(self.linear_p.weight)
+                    im.fill_diagonal_(1)
+                    self.linear_p.weight += im * identity_bias_magnitude
+                
 class DenseModel(EncoderModel):
     def encode_passage(self, psg):
         if psg is None:
@@ -63,7 +107,9 @@ class DenseModel(EncoderModel):
         pooler = DensePooler(
             model_args.projection_in_dim,
             model_args.projection_out_dim,
-            tied=not model_args.untie_encoder
+            tied=not model_args.untie_pooler,
+            symmetric=model_args.pooler_symmetric,
         )
+            
         pooler.load(model_args.model_name_or_path)
         return pooler

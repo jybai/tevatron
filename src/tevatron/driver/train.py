@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
